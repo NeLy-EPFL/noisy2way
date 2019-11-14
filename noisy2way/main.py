@@ -10,9 +10,14 @@ from n2v.utils.n2v_utils import manipulate_val_data
 from n2v.internals.N2V_DataGenerator import N2V_DataGenerator
 from skimage import io
 import tensorflow as tf
+from matplotlib import pyplot as plt
 
 
-def train(stack, basedir, model_name):
+def train(stack, basedir, model_name, train_set_size=10, validation_set_size=50,
+            train_steps_per_epoch=50,
+            train_epochs=40,
+            train_batch_size=128,
+          ):
     """
     Train the n2v network.
 
@@ -37,10 +42,12 @@ def train(stack, basedir, model_name):
         os.mkdir(f"{tmpdir}/data/train") 
         if stack.shape[0] < 100:
             raise ValueError("The stack needs to have at least 100 frames.")
-        for i, img in enumerate(stack[:50:5]):
+        step = int(stack.shape[0] / train_set_size)
+        for i, img in enumerate(stack[::step]):
             io.imsave(f"{tmpdir}/data/train/img_{i}.tif", img)
         
-        for i, img in enumerate(stack[50:100]):
+        step = int(stack.shape[0] / validation_set_size)
+        for i, img in enumerate(stack[1::step]):
             io.imsave(f"{tmpdir}/data/validation/img_{i}.tif", img)
         
         # We create our DataGenerator-object.
@@ -84,7 +91,7 @@ def train(stack, basedir, model_name):
         model = N2V(config, model_name, basedir=basedir)
         history = model.train(X, X_val)
         with open(os.path.join(basedir, f"{model_name}/history.pkl"), "wb") as fp:
-            pickle.dump(history, fp)
+            pickle.dump(history.history, fp)
         return model
 
 
@@ -222,3 +229,44 @@ def correct_2way_alignment(stack, basedir, model_name):
         return shifted
     else:
         raise RuntimeError(f"Could not find appropriate shift value. Original shift: {shift}, New shift: {new_shift}")
+
+def plot_loss(history):
+    """
+    This function plots the loss and validation loss
+    stored in a given history.
+
+    Parameters
+    ----------
+    history : dictionary
+        Keras history dictionary
+
+    Returns
+    -------
+    fig : matplotlib pyplot figure
+        Figure.
+    """
+    plt.figure(figsize=(16, 5))
+    plt.plot(history["loss"], label="loss")
+    plt.plot(history["val_loss"], label="validation loss")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.legend()
+    return plt.gcf()
+
+def load_history(path):
+    """
+    Loads a pickled keras history from file.
+
+    Parameters
+    ----------
+    path : string
+        Path to pickle file.
+
+    Returns
+    -------
+    history : dict
+        Keras history dict.
+    """
+    with open(path, "rb") as fp:
+        history = pickle.load(fp)
+    return history
