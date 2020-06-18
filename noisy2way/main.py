@@ -13,11 +13,16 @@ import tensorflow as tf
 from matplotlib import pyplot as plt
 
 
-def train(stack, basedir, model_name, train_set_size=10, validation_set_size=50,
-            train_steps_per_epoch=50,
-            train_epochs=40,
-            train_batch_size=128,
-          ):
+def train(
+    stack,
+    basedir,
+    model_name,
+    train_set_size=10,
+    validation_set_size=50,
+    train_steps_per_epoch=50,
+    train_epochs=40,
+    train_batch_size=128,
+):
     """
     Train the n2v network.
 
@@ -39,53 +44,55 @@ def train(stack, basedir, model_name, train_set_size=10, validation_set_size=50,
     with tempfile.TemporaryDirectory() as tmpdir:
         os.mkdir(f"{tmpdir}/data")
         os.mkdir(f"{tmpdir}/data/validation")
-        os.mkdir(f"{tmpdir}/data/train") 
+        os.mkdir(f"{tmpdir}/data/train")
         if stack.shape[0] < 100:
             raise ValueError("The stack needs to have at least 100 frames.")
         step = int(stack.shape[0] / train_set_size)
         for i, img in enumerate(stack[::step]):
             io.imsave(f"{tmpdir}/data/train/img_{i}.tif", img)
-        
+
         step = int(stack.shape[0] / validation_set_size)
         for i, img in enumerate(stack[1::step]):
             io.imsave(f"{tmpdir}/data/validation/img_{i}.tif", img)
-        
+
         # We create our DataGenerator-object.
         # It will help us load data and extract patches for training and validation.
         datagen = N2V_DataGenerator()
-        
+
         # We load all the '.tif' files from the 'data' directory.
         # If you want to load other types of files see the RGB example.
         # The function will return a list of images (numpy arrays).
         train_imgs = datagen.load_imgs_from_directory(directory=f"{tmpdir}/data/train")
-        validation_imgs = datagen.load_imgs_from_directory(directory=f"{tmpdir}/data/validation")
-        
+        validation_imgs = datagen.load_imgs_from_directory(
+            directory=f"{tmpdir}/data/validation"
+        )
+
         X = datagen.generate_patches_from_list(
             train_imgs, shape=(96, 96), shuffle=True, augment=False
         )
         X_val = datagen.generate_patches_from_list(
             validation_imgs, shape=(96, 96), augment=False
         )
-        
+
         # You can increase "train_steps_per_epoch" to get even better results at the price of longer computation.
         config = N2VConfig(
             X,
             unet_kern_size=3,
-            train_steps_per_epoch=50,
-            train_epochs=40,
+            train_steps_per_epoch=train_steps_per_epoch,
+            train_epochs=train_epochs,
             train_loss="mse",
             batch_norm=True,
-            train_batch_size=128,
+            train_batch_size=train_batch_size,
             n2v_perc_pix=1.6,
             n2v_patch_shape=(64, 64),
             n2v_manipulator="uniform_withCP",
             n2v_neighborhood_radius=5,
         )
-        
+
         # a name used to identify the model
-        #model_name = "n2v_2D_shift"
+        # model_name = "n2v_2D_shift"
         # the base directory in which our model will live
-        #basedir = "models"
+        # basedir = "models"
         # We are now creating our network model.
         basedir = os.path.abspath(os.path.expanduser(os.path.expandvars(basedir)))
         model = N2V(config, model_name, basedir=basedir)
@@ -115,11 +122,12 @@ def predict(model, stack):
     """
     stack = stack.astype(np.float32)
     results_stack = np.zeros_like(stack)
-    
+
     for i, img in enumerate(stack):
-            results_stack[i] = model.predict(img, axes='YX', n_tiles=(2,1))
-    
+        results_stack[i] = model.predict(img, axes="YX", n_tiles=(2, 1))
+
     return results_stack
+
 
 def find_shift(stack):
     """
@@ -142,18 +150,18 @@ def find_shift(stack):
     """
     half0 = stack[:, ::2, :]
     half1 = stack[:, 1::2, :]
-    
+
     assert half0.shape == half1.shape
-    
+
     max_shift = 20
     l1_errors = np.zeros(2 * max_shift + 1)
     l2_errors = np.zeros(2 * max_shift + 1)
     shift_values = list(range(-max_shift, max_shift + 1))
-    
+
     for i, shift in enumerate(shift_values):
-        diff = np.zeros((half1.shape[0], half1.shape[0] - abs(shift)))
+        diff = np.zeros((half1.shape[0], half1.shape[0] - abs(shift)), dtype=stack.dtype)
         if shift < 0:
-            diff = half1[:, :, abs(shift):] - half0[:, :, :shift]
+            diff = half1[:, :, abs(shift) :] - half0[:, :, :shift]
         elif shift == 0:
             diff = half1 - half0
         else:
@@ -188,14 +196,26 @@ def apply_shift(stack, shift):
     if shift < 0:
         off_set = 1
         shift = abs(shift)
-    else:
+    elif shift > 0:
         off_set = 0
+    else:
+        return stack
     print(off_set, shift)
     stack[:, off_set::2, :-shift] = stack[:, off_set::2, shift:]
     return stack
 
 
-def correct_2way_alignment(stack, basedir, model_name):
+def correct_2way_alignment(
+    stack,
+    basedir,
+    model_name,
+    save_denoised_image=None,
+    train_set_size=10,
+    validation_set_size=50,
+    train_steps_per_epoch=50,
+    train_epochs=40,
+    train_batch_size=128,
+):
     """
     Corrects two way alignment in a given stack.
 
@@ -213,22 +233,47 @@ def correct_2way_alignment(stack, basedir, model_name):
     -------
     shifted : 3D numpy array
         Stack after correcting two way alignment
+    shift : int
+        Shift magnitude.
     """
-    model = train(stack, basedir, model_name)
+    model = train(
+        stack,
+        basedir,
+        model_name,
+        train_set_size=train_set_size,
+        validation_set_size=validation_set_size,
+        train_steps_per_epoch=train_steps_per_epoch,
+        train_epochs=train_epochs,
+        train_batch_size=train_batch_size,
+    )
     denoised = predict(model, stack)
     shift = find_shift(denoised)
     if shift == 0:
         print("No shift detected, returning identity!")
-        return stack
+        # return stack
     shifted = apply_shift(stack, shift)
-    model_after_shift = train(shifted, basedir, model_name + "_retrained")
+    model_after_shift = train(
+        shifted,
+        basedir,
+        model_name + "_retrained",
+        train_set_size=train_set_size,
+        validation_set_size=validation_set_size,
+        train_steps_per_epoch=train_steps_per_epoch,
+        train_epochs=train_epochs,
+        train_batch_size=train_batch_size,
+    )
     denoised_after_shift = predict(model_after_shift, shifted)
     new_shift = find_shift(denoised_after_shift)
-    if int(new_shift) == 0:
-        print(f'Detected a shift of {shift}.')
-        return shifted
+    if save_denoised_image is not None:
+        io.imsave(save_denoised_image, denoised_after_shift)
+    if int(new_shift) < 2:
+        print(f"Detected a shift of {shift}.")
+        return shifted, shift
     else:
-        raise RuntimeError(f"Could not find appropriate shift value. Original shift: {shift}, New shift: {new_shift}")
+        raise RuntimeError(
+            f"Could not find appropriate shift value. Original shift: {shift}, New shift: {new_shift}"
+        )
+
 
 def plot_loss(history):
     """
@@ -252,6 +297,7 @@ def plot_loss(history):
     plt.ylabel("Loss")
     plt.legend()
     return plt.gcf()
+
 
 def load_history(path):
     """

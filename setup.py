@@ -14,10 +14,5 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/NeLy-EPFL/noisy2way",
-    install_requires=[
-        "numpy",
-        "docopt",
-        "sphinx",
-        "pytest"
-    ],
+    install_requires=["numpy", "docopt", "sphinx", "pytest"],
 )
