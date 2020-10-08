@@ -250,20 +250,23 @@ def correct_2way_alignment(
     shift = find_shift(denoised)
     if shift == 0:
         print("No shift detected, returning identity!")
+        new_shift = 0
+        denoised_after_shift = denoised
         # return stack
-    shifted = apply_shift(stack, shift)
-    model_after_shift = train(
-        shifted,
-        basedir,
-        model_name + "_retrained",
-        train_set_size=train_set_size,
-        validation_set_size=validation_set_size,
-        train_steps_per_epoch=train_steps_per_epoch,
-        train_epochs=train_epochs,
-        train_batch_size=train_batch_size,
-    )
-    denoised_after_shift = predict(model_after_shift, shifted)
-    new_shift = find_shift(denoised_after_shift)
+    else:
+        shifted = apply_shift(stack, shift)
+        model_after_shift = train(
+            shifted,
+            basedir,
+            model_name + "_retrained",
+            train_set_size=train_set_size,
+            validation_set_size=validation_set_size,
+            train_steps_per_epoch=train_steps_per_epoch,
+            train_epochs=train_epochs,
+            train_batch_size=train_batch_size,
+        )
+        denoised_after_shift = predict(model_after_shift, shifted)
+        new_shift = find_shift(denoised_after_shift)
     if save_denoised_image is not None:
         io.imsave(save_denoised_image, denoised_after_shift)
     if int(new_shift) < 2:
