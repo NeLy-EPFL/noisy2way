@@ -247,6 +247,7 @@ def correct_2way_alignment(
         train_batch_size=train_batch_size,
     )
     denoised = predict(model, stack)
+    
     shift = find_shift(denoised)
     if shift == 0:
         print("No shift detected, returning identity!")
@@ -264,8 +265,21 @@ def correct_2way_alignment(
     )
     denoised_after_shift = predict(model_after_shift, shifted)
     new_shift = find_shift(denoised_after_shift)
+    
     if save_denoised_image is not None:
-        io.imsave(save_denoised_image, denoised_after_shift)
+        dtype = stack.dtype
+        if np.issubdtype(dtype, np.integer):
+            max_value = np.iinfo(dtype).max
+        elif np.issubdtype(dtype, np.float):
+            max_value = np.finfo(dtype).max
+
+        denoised_after_shift = denoised_after_shift - np.min(denoised_after_shift)
+        denoised_after_shift = denoised_after_shift / np.max(denoised_after_shift) * max_value
+        denoised_after_shift = denoised_after_shift.astype(dtype)
+        denoised_after_shift = np.expand_dims(denoised_after_shift, axis=1)
+        denoised_after_shift = np.expand_dims(denoised_after_shift, axis=4)
+        io.imsave(save_denoised_image, denoised_after_shift, imagej=True)
+    
     if int(new_shift) < 2:
         print(f"Detected a shift of {shift}.")
         return shifted, shift
@@ -316,3 +330,15 @@ def load_history(path):
     with open(path, "rb") as fp:
         history = pickle.load(fp)
     return history
+
+
+def plot_correspondence(original_stack, denoised_stack):
+    x = original_stack.flatten()
+    y = denoised_stack.flatten()
+    print(x.shape)
+    print(y.shape)
+    plt.scatter(x, y)
+    plt.xlabel("Original value")
+    plt.ylabel("Denoised value")
+    plt.savefig("denoised_corespondance.pdf")
+    return plt.gcf()
